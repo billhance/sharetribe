@@ -258,6 +258,38 @@ class ListingsController < ApplicationController
   end
 
   def create
+    # TODO: move to a separate file (as PaypalService::API::Api) and
+    # create a HarmonyClient singleton instance there
+    bookings_service = ServiceClient::Client.new("http://localhost:8085",
+                                                 {
+                                                   initiate_booking: "/bookings/initiate",
+                                                   create_bookable: "/bookables/create",
+                                                   show_bookable: "/bookables/show",
+                                                   query_timeslots: "/timeslots/query"
+                                                 },
+                                                 [
+                                                   ServiceClient::Middleware::RequestID.new,
+                                                   ServiceClient::Middleware::Timeout.new,
+                                                   ServiceClient::Middleware::Logger.new,
+                                                   ServiceClient::Middleware::Timing.new,
+                                                   ServiceClient::Middleware::BodyEncoder.new(:transit_json)
+                                                 ])
+
+    listing_uuid = UUIDTools::UUID.timestamp_create
+
+    res = bookings_service.post(:create_bookable,
+                                body: {
+                                  marketplaceId: @current_community.uuid,
+
+                                  # TODO: use UUIDTools::UUID in values
+                                  refId: listing_uuid.to_s,
+
+                                  # TODO: Harmony doesn't currently
+                                  # accept out @current_user.id format
+                                  # as UUID. Figure out a way to
+                                  # provide a UUID.
+                                  authorId: SecureRandom.uuid
+                                })
     params[:listing].delete("origin_loc_attributes") if params[:listing][:origin_loc_attributes][:address].blank?
 
     shape = get_shape(Maybe(params)[:listing][:listing_shape_id].to_i.or_else(nil))
@@ -276,11 +308,12 @@ class ListingsController < ApplicationController
     m_unit = select_unit(listing_unit, shape)
 
     listing_params = create_listing_params(listing_params).merge(
-        community_id: @current_community.id,
-        listing_shape_id: shape[:id],
-        transaction_process_id: shape[:transaction_process_id],
-        shape_name_tr_key: shape[:name_tr_key],
-        action_button_tr_key: shape[:action_button_tr_key]
+      uuid: listing_uuid.raw,
+      community_id: @current_community.id,
+      listing_shape_id: shape[:id],
+      transaction_process_id: shape[:transaction_process_id],
+      shape_name_tr_key: shape[:name_tr_key],
+      action_button_tr_key: shape[:action_button_tr_key]
     ).merge(unit_to_listing_opts(m_unit)).except(:unit)
 
     @listing = Listing.new(listing_params)
@@ -313,7 +346,7 @@ class ListingsController < ApplicationController
 
         # Onboarding wizard step recording
         state_changed = Admin::OnboardingWizard.new(@current_community.id)
-          .update_from_event(:listing_created, @listing)
+                        .update_from_event(:listing_created, @listing)
         if state_changed
           report_to_gtm({event: "km_record", km_event: "Onboarding listing created"})
 
