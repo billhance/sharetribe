@@ -262,10 +262,11 @@ class ListingsController < ApplicationController
 
     shape = get_shape(Maybe(params)[:listing][:listing_shape_id].to_i.or_else(nil))
 
-    # TODO: check shape for availability flag, only create bookable if
-    # availability enabled
     listing_uuid = UUIDTools::UUID.timestamp_create
-    create_bookable(listing_uuid)
+
+    if shape.present? && shape[:availability] != :none
+      create_bookable(listing_uuid)
+    end
 
     listing_params = ListingFormViewUtils.filter(params[:listing], shape)
     listing_unit = Maybe(params)[:listing][:unit].map { |u| ListingViewUtils::Unit.deserialize(u) }.or_else(nil)
