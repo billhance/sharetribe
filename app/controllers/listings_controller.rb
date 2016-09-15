@@ -258,41 +258,14 @@ class ListingsController < ApplicationController
   end
 
   def create
-    # TODO: move to a separate file (as PaypalService::API::Api) and
-    # create a HarmonyClient singleton instance there
-    bookings_service = ServiceClient::Client.new("http://localhost:8085",
-                                                 {
-                                                   initiate_booking: "/bookings/initiate",
-                                                   create_bookable: "/bookables/create",
-                                                   show_bookable: "/bookables/show",
-                                                   query_timeslots: "/timeslots/query"
-                                                 },
-                                                 [
-                                                   ServiceClient::Middleware::RequestID.new,
-                                                   ServiceClient::Middleware::Timeout.new,
-                                                   ServiceClient::Middleware::Logger.new,
-                                                   ServiceClient::Middleware::Timing.new,
-                                                   ServiceClient::Middleware::BodyEncoder.new(:transit_json)
-                                                 ])
-
-    listing_uuid = UUIDTools::UUID.timestamp_create
-
-    res = bookings_service.post(:create_bookable,
-                                body: {
-                                  marketplaceId: @current_community.uuid,
-
-                                  # TODO: use UUIDTools::UUID in values
-                                  refId: listing_uuid.to_s,
-
-                                  # TODO: Harmony doesn't currently
-                                  # accept out @current_user.id format
-                                  # as UUID. Figure out a way to
-                                  # provide a UUID.
-                                  authorId: SecureRandom.uuid
-                                })
     params[:listing].delete("origin_loc_attributes") if params[:listing][:origin_loc_attributes][:address].blank?
 
     shape = get_shape(Maybe(params)[:listing][:listing_shape_id].to_i.or_else(nil))
+
+    # TODO: check shape for availability flag, only create bookable if
+    # availability enabled
+    listing_uuid = UUIDTools::UUID.timestamp_create
+    create_bookable(listing_uuid)
 
     listing_params = ListingFormViewUtils.filter(params[:listing], shape)
     listing_unit = Maybe(params)[:listing][:unit].map { |u| ListingViewUtils::Unit.deserialize(u) }.or_else(nil)
@@ -516,6 +489,19 @@ class ListingsController < ApplicationController
   end
 
   private
+
+  def create_bookable(listing_uuid)
+    author_uuid = UUIDTools::UUID.parse_raw(Base64.urlsafe_decode64(@current_user.id))
+
+    res = HarmonyService::API::Api.post(:create_bookable,
+                                        body: {
+                                          marketplaceId: @current_community.uuid,
+                                          refId: listing_uuid,
+                                          authorId: author_uuid
+                                        })
+
+    # TODO: error handling
+  end
 
   def select_shape(shapes, id)
     if shapes.size == 1
