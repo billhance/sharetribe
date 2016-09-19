@@ -7,7 +7,6 @@ config/config.yml
 config/session_secret
 config/gmaps_api_key.yml
 config/translation.yml
-tmp/
 doc/api
 doc/app
 public/images/listing_images
@@ -62,3 +61,9 @@ client/node_modules
 
 # Generated assets
 /public/webpack/*
+
+# Tmp Files
+/tmp/*
+!/tmp/cache/
+/tmp/cache/*
+!/tmp/cache/.keep
